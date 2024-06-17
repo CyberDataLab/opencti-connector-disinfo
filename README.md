@@ -1,4 +1,4 @@
-# External Ingestion Template Connector
+# External Ingestion Disinfo Connector
 
 <!--
 General description of the connector
