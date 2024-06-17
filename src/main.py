@@ -85,6 +85,10 @@ class CustomConnector(ExternalImportConnector):
         # (now incidents with the same disarm_id will have the same STIX ID)
         NAMESPACE_UUID = uuid.UUID('12345678-1234-5678-1234-567812345678')
 
+        # available columns are: 
+        # disarm_id, name, objecttype, summary, year_started, attributions_seen, 
+        # found_in_country, urls, notes, when_added, found_via, longname
+
         for _, row in df.iterrows():
             location = stix2.Location(
                 country=row["found_in_country"]
