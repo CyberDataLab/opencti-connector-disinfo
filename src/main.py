@@ -5,6 +5,7 @@ import time
 import stix2
 from lib.external_import import ExternalImportConnector
 
+from io import BytesIO
 import pandas as pd
 import requests
 import uuid
@@ -45,24 +46,6 @@ class CustomConnector(ExternalImportConnector):
         # ===========================
         # === Add your code below ===
         # ===========================
-        self.helper.log_debug("Creating a sample reference using STIX2...")
-        main_reference = stix2.ExternalReference(
-            source_name="GitHub",
-            url="https://github.com/OpenCTI-Platform/connectors",
-            description="A sample external reference used by the connector.",
-        )
-
-        self.helper.log_debug("Creating an observable for the IPv4...")
-        ipv4_observable = stix2.IPv4Address(
-            value="2.2.2.2",
-            object_marking_refs=[stix2.TLP_GREEN],
-            custom_properties={
-                "description": "A sample observable created for the tutorial.",
-                "labels": ["test", "tutorial"],
-                "x_opencti_create_indicator": False,
-                "external_references": [main_reference],
-            },
-        )
 
         self.helper.log_debug("Creating new object...")
         # Define the URL to download the XLS file
@@ -89,33 +72,127 @@ class CustomConnector(ExternalImportConnector):
         # disarm_id, name, objecttype, summary, year_started, attributions_seen, 
         # found_in_country, urls, notes, when_added, found_via, longname
 
-        for _, row in df.iterrows():
-            location = stix2.Location(
-                country=row["found_in_country"]
-            )
-            
-            incident = stix2.Incident(
-                # Crear un UUID basado en el disarm_id
-                id = f"incident--{uuid.uuid5(NAMESPACE_UUID, str(row['disarm_id']))}",
+        # Here the plan is to create associations between incidents, techniques and actors.
+        # We will create relationships between incidents and techniques, and between incidents and actors.
+        self.helper.log_debug("Creating disinformation STIX objects...")
+        for index, row in df.iterrows():
+            # Now for this incident we also can get the techniques associated to this incident ID in the incidenttechniques sheet and create relationships to the threat actor (country):
+            # incidentstechniques sheet header: disarm_id, name, incident_id, technique_ids, summary
 
-                name=row["name"],
-                description=row["summary"],
-                object_marking_refs=[stix2.TLP_GREEN],
-                labels=["incident"],
-                custom_properties={
-                    "objecttype": row["objecttype"],
-                    "year_started": row["year_started"],
-                    "attributions_seen": row["attributions_seen"],
-                    "found_in_country": row["found_in_country"],
-                    "urls": row["urls"],
-                    "notes": row["notes"],
-                    "when_added": row["when_added"],
-                    "found_via": row["found_via"],
-                    "longname": row["longname"],
-                }
+
+            # Create the targeted country object (separated by commas)
+            country_objects = []
+            countries = row['found_in_country']
+            if countries:
+                countries = countries.split(",")
+            for country in countries:
+                country_id = country
+                country_name = country
+                country_object = stix2.Location(
+                    id="location--" + str(uuid.uuid5(NAMESPACE_UUID, country_id)),
+                    name=country_name,
+                    country=country
+                )
+                country_objects.append(country_object)
+
+
+            # Create the actor object (separated by commas or not present)
+            actor_objects = []
+            actors = ['Unknown']
+            if row['attributions_seen']:
+                actors = row['attributions_seen'].split(",")
+            for actor in actors:
+                # Create the threat actor object
+                actor_id = actor
+                actor_name = actor + " State"
+                threat_actor = stix2.ThreatActor(
+                    id="threat-actor--" + str(uuid.uuid5(NAMESPACE_UUID, actor_id)),
+                    name=actor_name,
+                    threat_actor_types = ["nation-state"],
+                    labels=["threat-actor"]
+                )
+                actor_objects.append(threat_actor)
+                
+
+            # Get the techniques associated with this incident
+            technique_objects = []
+            campaign_id = row['disarm_id']
+            techniques = pd.read_excel(xls_data, sheet_name="incidenttechniques")
+            techniques = techniques.where(pd.notnull(techniques), None)
+            incident_techniques = techniques[techniques['incident_id'] == campaign_id]
+            for tech_index, tech_row in incident_techniques.iterrows():
+                technique_id = tech_row['technique_ids']
+                if technique_id:
+                    attack_pattern = stix2.AttackPattern(
+                        id="attack-pattern--" + str(uuid.uuid5(NAMESPACE_UUID, technique_id)), 
+                        name=tech_row['technique_ids'],
+                        description=tech_row['summary'],
+                        labels=["attack-pattern"]
+                    )
+
+                    # Create the relationship between the actors, locations and techniques
+                    for actor_object in actor_objects:
+                        relationship_actor = stix2.Relationship(
+                            source_ref=threat_actor.id,
+                            relationship_type="uses",
+                            target_ref=attack_pattern.id
+                        )
+                        stix_objects.append(relationship_actor)
+                    for country in country_objects:
+                        relationship_country = stix2.Relationship(
+                            source_ref=attack_pattern.id,
+                            relationship_type="targets",
+                            target_ref=country_object.id
+                        )
+                        stix_objects.append(relationship_country)
+
+                    technique_objects.append(attack_pattern)
+
+            # Create a campaign object to represent the incident (campaign is the closest object to an incident in STIX)
+            # Relate the campaign with the actors, locations and techniques.
+            campaign_id = row['disarm_id']
+            campaign_name = row['name']
+            campaign_description = row['summary']
+            campaign_object = stix2.Campaign(
+                id="campaign--" + str(uuid.uuid5(NAMESPACE_UUID, campaign_id)),
+                name=campaign_name,
+                description=campaign_description,
+                labels=["campaign", "disinformation"]
             )
-            
-        stix_objects.append(ipv4_observable)
+
+
+            # Create the relationship between the used techniques and the incident
+            for technique in technique_objects:
+                relationship_technique = stix2.Relationship(
+                    source_ref=campaign_object.id,
+                    relationship_type="uses",
+                    target_ref=technique.id
+                )
+                stix_objects.append(relationship_technique)
+
+            # Create the relationship between the actors and the incident
+            for actor in actor_objects:
+                relationship_actor = stix2.Relationship(
+                    source_ref=campaign_object.id,
+                    relationship_type="attributed-to",
+                    target_ref=actor.id
+                )
+                stix_objects.append(relationship_actor)
+
+            # Create the relationship between the locations and the incident
+            for country in country_objects:
+                relationship_country = stix2.Relationship(
+                    source_ref=campaign_object.id,
+                    relationship_type="targets",
+                    target_ref=country.id
+                )
+                stix_objects.append(relationship_country)
+
+            stix_objects.append(campaign_object)
+            stix_objects.extend(actor_objects)
+            stix_objects.extend(country_objects)
+            stix_objects.extend(technique_objects)
+
         # ===========================
         # === Add your code above ===
         # ===========================
