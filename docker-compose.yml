@@ -17,7 +17,8 @@ services:
       # Connector's custom execution parameters:
       - EXTRA_PARAMETER=${EXTRA_PARAMETER}
     restart: always
-
+    volumes:
+      - ./src/main.py:/opt/connector/main.py
 networks:
   default:
     external: true
