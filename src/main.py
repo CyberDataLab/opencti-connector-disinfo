@@ -209,5 +209,5 @@ if __name__ == "__main__":
         connector.run()
     except Exception as e:
         print(e)
-        time.sleep(10)
+        time.sleep(10000) # 166 mins may be adecuate for debugging
         sys.exit(0)
