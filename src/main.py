@@ -1,4 +1,4 @@
-# import os
+import os
 import sys
 import time
 
@@ -56,6 +56,9 @@ class CustomConnector(ExternalImportConnector):
         if response.status_code != 200:
             self.helper.log_error(f"Failed to download the XLS file: {response.status_code}")
             return stix_objects
+        
+        # Get the STIX techniques introduced by the DISARM connector
+        disarm = self.helper.api.attack_pattern.list()
 
         xls_data = BytesIO(response.content)
         df = pd.read_excel(xls_data, sheet_name="incidents")
@@ -79,6 +82,7 @@ class CustomConnector(ExternalImportConnector):
             # Now for this incident we also can get the techniques associated to this incident ID in the incidenttechniques sheet and create relationships to the threat actor (country):
             # incidentstechniques sheet header: disarm_id, name, incident_id, technique_ids, summary
 
+            # Now lets apply SJ Terp's logic to create the STIX objects: https://x.com/bodaceacat/status/1189525720609050625
 
             # Create the targeted country object (separated by commas)
             country_objects = []
@@ -112,68 +116,105 @@ class CustomConnector(ExternalImportConnector):
                     labels=["threat-actor"]
                 )
                 actor_objects.append(threat_actor)
-                
 
             # Get the techniques associated with this incident
-            technique_objects = []
+            technique_ids = []
             campaign_id = row['disarm_id']
             techniques = pd.read_excel(xls_data, sheet_name="incidenttechniques")
             techniques = techniques.where(pd.notnull(techniques), None)
             incident_techniques = techniques[techniques['incident_id'] == campaign_id]
+
+
+
             for tech_index, tech_row in incident_techniques.iterrows():
-                technique_id = tech_row['technique_ids']
-                if technique_id:
-                    attack_pattern = stix2.AttackPattern(
-                        id="attack-pattern--" + str(uuid.uuid5(NAMESPACE_UUID, technique_id)), 
-                        name=tech_row['technique_ids'],
-                        description=tech_row['summary'],
-                        labels=["attack-pattern"]
+                technique_disarm_id = tech_row['technique_ids']
+                # Search in the DISARM dictionary, the STIX ID of the technique to create the relationship
+                technique_id = None
+                # read from octi
+                # https://docs.opencti.io/5.8.X/development/connectors/#reading-from-the-opencti-platform
+                # https://docs.opencti.io/5.12.X/reference/filters/
+                # https://www.mickaelwalter.fr/opencti-use-the-api/
+                for stix_object in disarm:
+                    if (stix_object["x_mitre_id"]== technique_disarm_id):
+                            technique_id = stix_object["standard_id"]
+                            break
+                if technique_id is None:
+                    self.helper.log_error(f"Technique {technique_disarm_id} not found in DISARM.json")
+                    continue
+
+                technique_ids.append(technique_id)
+
+
+                # Create an observed data for a invented hashtag ~MemesAgainstDemocracy
+                # Here we should probably create an adecuate SCOs for the hashtags (generic SCO) and the URLs
+                # This is a simple example
+                # url_object = stix2.URL(
+                #     id="url--" + str(uuid.uuid5(NAMESPACE_UUID, technique_id)),
+                #     value="https://www.example.com"
+                # )
+                # stix_objects.append(url_object)
+
+                # observed_data = stix2.ObservedData(
+                #     id="observed-data--" + str(uuid.uuid5(NAMESPACE_UUID, technique_id)),
+                #     first_observed="2021-01-01T00:00:00Z",
+                #     last_observed="2021-01-01T00:00:00Z",
+                #     number_observed=1,
+                #     object_refs=[url_object.id]
+                # )
+                # stix_objects.append(observed_data)
+                
+                # relationship_observed_data = stix2.Relationship(
+                #     source_ref=technique_id,
+                #     relationship_type="related-to",
+                #     target_ref=observed_data.id
+                # )
+                # stix_objects.append(relationship_observed_data)
+
+                # Create the relationship between the actors, locations and techniques
+                for actor_object in actor_objects:
+                    relationship_actor = stix2.Relationship(
+                        source_ref=threat_actor.id,
+                        relationship_type="uses",
+                        target_ref=technique_id
                     )
+                    stix_objects.append(relationship_actor)
+                for country in country_objects:
+                    relationship_country = stix2.Relationship(
+                        source_ref=technique_id,
+                        relationship_type="targets",
+                        target_ref=country_object.id
+                    )
+                    stix_objects.append(relationship_country)
 
-                    # Create the relationship between the actors, locations and techniques
-                    for actor_object in actor_objects:
-                        relationship_actor = stix2.Relationship(
-                            source_ref=threat_actor.id,
-                            relationship_type="uses",
-                            target_ref=attack_pattern.id
-                        )
-                        stix_objects.append(relationship_actor)
-                    for country in country_objects:
-                        relationship_country = stix2.Relationship(
-                            source_ref=attack_pattern.id,
-                            relationship_type="targets",
-                            target_ref=country_object.id
-                        )
-                        stix_objects.append(relationship_country)
-
-                    technique_objects.append(attack_pattern)
+                    #technique_objects.append(attack_pattern)
 
             # Create a campaign object to represent the incident (campaign is the closest object to an incident in STIX)
             # Relate the campaign with the actors, locations and techniques.
-            campaign_id = row['disarm_id']
-            campaign_name = row['name']
-            campaign_description = row['summary']
-            campaign_object = stix2.Campaign(
-                id="campaign--" + str(uuid.uuid5(NAMESPACE_UUID, campaign_id)),
-                name=campaign_name,
-                description=campaign_description,
-                labels=["campaign", "disinformation"]
+            intrusion_id = row['disarm_id']
+            intrusion_name = row['name']
+            intrusion_description = row['summary']
+            intrusion_object = stix2.IntrusionSet(
+                id="intrusion-set--" + str(uuid.uuid5(NAMESPACE_UUID, intrusion_id)),
+                name=intrusion_name,
+                description=intrusion_description,
+                labels=["incident", "disinformation"]
             )
 
 
             # Create the relationship between the used techniques and the incident
-            for technique in technique_objects:
+            # for technique in technique_objects:
+            for technique in technique_ids:
                 relationship_technique = stix2.Relationship(
-                    source_ref=campaign_object.id,
+                    source_ref=intrusion_object.id,
                     relationship_type="uses",
-                    target_ref=technique.id
+                    target_ref=technique
                 )
                 stix_objects.append(relationship_technique)
 
             # Create the relationship between the actors and the incident
             for actor in actor_objects:
                 relationship_actor = stix2.Relationship(
-                    source_ref=campaign_object.id,
+                    source_ref=intrusion_object.id,
                     relationship_type="attributed-to",
                     target_ref=actor.id
                 )
@@ -182,16 +223,16 @@ class CustomConnector(ExternalImportConnector):
             # Create the relationship between the locations and the incident
             for country in country_objects:
                 relationship_country = stix2.Relationship(
-                    source_ref=campaign_object.id,
+                    source_ref=intrusion_object.id,
                     relationship_type="targets",
                     target_ref=country.id
                 )
                 stix_objects.append(relationship_country)
 
-            stix_objects.append(campaign_object)
+            stix_objects.append(intrusion_object)
             stix_objects.extend(actor_objects)
             stix_objects.extend(country_objects)
-            stix_objects.extend(technique_objects)
+            #stix_objects.extend(technique_objects)
 
         # ===========================
         # === Add your code above ===
@@ -209,5 +250,5 @@ if __name__ == "__main__":
         connector.run()
     except Exception as e:
         print(e)
-        time.sleep(10000) # 166 mins may be adecuate for debugging
+        time.sleep(10000000)
         sys.exit(0)
