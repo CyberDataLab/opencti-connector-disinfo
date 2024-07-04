@@ -9,6 +9,8 @@ General description of the connector
 * ...
 -->
 
+Connector for OpenCTI for Disinformation Intelligence data based on DISARM framework
+
 ## Installation
 
 ### Requirements
