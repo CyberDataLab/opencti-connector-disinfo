@@ -47,20 +47,22 @@ class CustomConnector(ExternalImportConnector):
         # === Add your code below ===
         # ===========================
 
-        self.helper.log_debug("Creating new object...")
-        # Define the URL to download the XLS file
-        xls_url = "https://github.com/DISARMFoundation/DISARMframeworks/raw/main/DISARM_MASTER_DATA/DISARM_DATA_MASTER.xlsx"
-        self.helper.log_debug(f"Downloading the XLS file from {xls_url}...")
+        # self.helper.log_debug("Creating new object...")
+        # # Define the URL to download the XLS file
+        # xls_url = "https://github.com/DISARMFoundation/DISARMframeworks/raw/main/DISARM_MASTER_DATA/DISARM_DATA_MASTER.xlsx"
+        # self.helper.log_debug(f"Downloading the XLS file from {xls_url}...")
 
-        response = requests.get(xls_url)
-        if response.status_code != 200:
-            self.helper.log_error(f"Failed to download the XLS file: {response.status_code}")
-            return stix_objects
+        # response = requests.get(xls_url)
+        # if response.status_code != 200:
+        #     self.helper.log_error(f"Failed to download the XLS file: {response.status_code}")
+        #     return stix_objects
         
         # Get the STIX techniques introduced by the DISARM connector
         disarm = self.helper.api.attack_pattern.list()
 
-        xls_data = BytesIO(response.content)
+        # xls_data = BytesIO(response.content)
+        # df = pd.read_excel(xls_data, sheet_name="incidents")
+        xls_data = "DISARM_DATA_MASTER_additions.xlsx"
         df = pd.read_excel(xls_data, sheet_name="incidents")
 
        # Replace NaN or infinite values with None to make them JSON serializable

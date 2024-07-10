@@ -19,6 +19,7 @@ services:
     restart: always
     volumes:
       - ./src/main.py:/opt/connector/main.py
+      - ./DISARM_DATA_MASTER_additions.xlsx:/opt/connector/DISARM_DATA_MASTER_additions.xlsx
 networks:
   default:
     external: true
