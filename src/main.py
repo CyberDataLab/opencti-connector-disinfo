@@ -10,13 +10,112 @@ import pandas as pd
 import requests
 import uuid
 
-
+from lib.margot_dataset_importer import load_data
 
 class CustomConnector(ExternalImportConnector):
 
     NAMESPACE_UUID = uuid.UUID('12345678-1234-5678-1234-567812345678')
 
-    def generate_disinfo_stix_objects(self, disarm):
+    def generate_margotfulde_incidents_stix_objects(self, disarm):
+
+        self.helper.log_debug("Creating disinformation Margot Fulde objects...")
+
+        stix_objects = []
+        incidents = load_data("Margot FuldeHardy_FIMI_Elections_Dataset_vF_07_01.csv")
+        for incident in incidents:
+            country_objects = []
+            countries = incident['target_country']
+            if countries:
+                countries = countries.split(",")
+            for country in countries:
+                country_id = country
+                country_name = country
+                country_object = stix2.Location(
+                    id="location--" + str(uuid.uuid5(self.NAMESPACE_UUID, country_id)),
+                    name=country_name,
+                    country=country
+                )
+                country_objects.append(country_object)
+
+            # Create the actor object (separated by commas or not present)
+            actor_objects = []
+            actors = ['Unknown']
+            if incident['threat_actor']:
+                actors = incident['threat_actor'].split(",")
+            for actor in actors:
+                # Create the threat actor object
+                actor_id = actor
+                actor_name = actor 
+                threat_actor = stix2.ThreatActor(
+                    id="threat-actor--" + str(uuid.uuid5(self.NAMESPACE_UUID, actor_id)),
+                    name=actor_name,
+                    threat_actor_types = ["nation-state"],
+                    labels=["threat-actor"]
+                )
+                actor_objects.append(threat_actor)
+
+            # Get the techniques associated with this incident
+            technique_ids = []
+            for technique in incident['techniques']:
+                technique_disarm_id = technique
+                # Search in the DISARM dictionary, the STIX ID of the technique to create the relationship
+                technique_id = None
+                for stix_object in disarm:
+                    if (stix_object["x_mitre_id"]== technique_disarm_id):
+                            technique_id = stix_object["standard_id"]
+                            break
+                if technique_id is None:
+                    self.helper.log_error(f"Technique {technique_disarm_id} not found in DISARM.json")
+                    continue
+
+                technique_ids.append(technique_id)
+
+            # Create a campaign object to represent the incident (campaign is the closest object to an incident in STIX)
+            # Relate the campaign with the actors, locations and techniques.
+            intrusion_id = incident['event']
+            intrusion_name = incident['event']
+            intrusion_description = incident['event_description']
+            intrusion_object = stix2.IntrusionSet(
+                id="intrusion-set--" + str(uuid.uuid5(self.NAMESPACE_UUID, intrusion_id)),
+                name=intrusion_name,
+                description=intrusion_description,
+                labels=["incident", "disinformation","margotfulde"]
+            )
+
+            # Create the relationship between the used techniques and the incident
+            for technique in technique_ids:
+                relationship_technique = stix2.Relationship(
+                    source_ref=intrusion_object.id,
+                    relationship_type="uses",
+                    target_ref=technique
+                )
+                stix_objects.append(relationship_technique)
+
+            # Create the relationship between the actors and the incident
+            for actor in actor_objects:
+                relationship_actor = stix2.Relationship(
+                    source_ref=intrusion_object.id,
+                    relationship_type="attributed-to",
+                    target_ref=actor.id
+                )
+                stix_objects.append(relationship_actor)
+
+            # Create the relationship between the locations and the incident
+            for country in country_objects:
+                relationship_country = stix2.Relationship(
+                    source_ref=intrusion_object.id,
+                    relationship_type="targets",
+                    target_ref=country.id
+                )
+                stix_objects.append(relationship_country)
+
+            stix_objects.append(intrusion_object)
+            stix_objects.extend(actor_objects)
+            stix_objects.extend(country_objects)
+        return stix_objects
+
+
+    def generate_disinfo_incidents_stix_objects(self, disarm):
 
         xls_data = "DISARM_DATA_MASTER_additions.xlsx"
         df = pd.read_excel(xls_data, sheet_name="incidents")
@@ -125,7 +224,7 @@ class CustomConnector(ExternalImportConnector):
                 id="intrusion-set--" + str(uuid.uuid5(self.NAMESPACE_UUID, intrusion_id)),
                 name=intrusion_name,
                 description=intrusion_description,
-                labels=["incident", "disinformation"]
+                labels=["incident", "disinformation","disarm"]
             )
 
 
@@ -205,7 +304,8 @@ class CustomConnector(ExternalImportConnector):
 
 
         # Save the generated STIX objects
-        stix_objects = self.generate_disinfo_stix_objects(disarm)
+        stix_objects.extend(self.generate_disinfo_incidents_stix_objects(disarm))
+        stix_objects.extend(self.generate_margotfulde_incidents_stix_objects(disarm))
 
         # ===========================
         # === Add your code above ===
