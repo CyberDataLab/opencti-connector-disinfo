@@ -20,9 +20,7 @@ services:
     volumes:
       - ./src/main.py:/opt/connector/main.py
       - ./src/lib/margot_dataset_importer.py:/opt/connector/lib/margot_dataset_importer.py
-      - ./DISARM_DATA_MASTER_additions.xlsx:/opt/connector/DISARM_DATA_MASTER_additions.xlsx
-      - ./Margot FuldeHardy_FIMI_Elections_Dataset_vF_07_01.csv:/opt/connector/Margot FuldeHardy_FIMI_Elections_Dataset_vF_07_01.csv
 networks:
   default:
     external: true
-    name: openctidocker_default
+    name: opencti-disinfo_default
