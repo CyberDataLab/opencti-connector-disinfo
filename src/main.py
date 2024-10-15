@@ -16,12 +16,12 @@ class CustomConnector(ExternalImportConnector):
 
     NAMESPACE_UUID = uuid.UUID('12345678-1234-5678-1234-567812345678')
 
-    def generate_margotfulde_incidents_stix_objects(self, disarm):
+    def generate_margotfulde_incidents_stix_objects(self, disarm, margot_dataset_path):
 
         self.helper.log_debug("Creating disinformation Margot Fulde objects...")
 
         stix_objects = []
-        incidents = load_data("Margot FuldeHardy_FIMI_Elections_Dataset_vF_07_01.csv")
+        incidents = load_data(margot_dataset_path)
         for incident in incidents:
             country_objects = []
             countries = incident['target_country']
@@ -41,6 +41,7 @@ class CustomConnector(ExternalImportConnector):
             actor_objects = []
             actors = ['Unknown']
             if incident['threat_actor']:
+                self.helper.log_info(incident['threat_actor'])
                 actors = incident['threat_actor'].split(",")
             for actor in actors:
                 # Create the threat actor object
@@ -304,8 +305,8 @@ class CustomConnector(ExternalImportConnector):
 
 
         # Save the generated STIX objects
-        stix_objects.extend(self.generate_disinfo_incidents_stix_objects(disarm))
-        stix_objects.extend(self.generate_margotfulde_incidents_stix_objects(disarm))
+        #stix_objects.extend(self.generate_disinfo_incidents_stix_objects(disarm))
+        stix_objects.extend(self.generate_margotfulde_incidents_stix_objects(disarm, "datasets/merged_Foulde_DSRM_additions.csv"))
 
         # ===========================
         # === Add your code above ===
