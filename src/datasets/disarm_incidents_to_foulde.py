@@ -31,10 +31,12 @@ for index, row in incident_df.iterrows():
     # We will write the CSV to a file called disarm_to_foulde.csv
 
     with open('disarm_to_foulde.csv', 'a', encoding="utf-8", newline='') as f:
-        newincidentrow = [ row['year_started'], row['found_in_country'], row['name'], row['found_in_country'], '', '', row['attributions_seen'], row['summary'] ]
+        newincidentrow = [row['year_started'], row['found_in_country'], row['name'], row['found_in_country'], '', '', 
+                          row['attributions_seen'] if pd.notna(row['attributions_seen']) else 'Unknown', 
+                          row['summary'] if pd.notna(row['summary']) else 'No description']
 
         # Marking the techniques used (this is brute force :D)
-        for technique in header[header.index('Event description')+1:header.index('Facebook')-1]:
+        for technique in header[header.index('Event description')+1:header.index('Facebook')]:
             # Check what technique_id appears in the list of techniques of the dataframe
             found = '0'
             for technique_id in technique_ids:
@@ -56,7 +58,7 @@ for index, row in incident_df.iterrows():
         # Attribution Source  (not for now)
         newincidentrow.extend(['0' for i in range(4)])
 
-        # Sources
+        # Sources (we have it in DISARM incidents separated by ,)
         sources = str(row['urls']).split()
         for i in range(8):
             if i < len(sources):
